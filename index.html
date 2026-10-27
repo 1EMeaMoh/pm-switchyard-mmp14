@@ -7,7 +7,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    /* ... (CSS เหมือนเดิมทั้งหมด ไม่ต้องแก้) ... */
     :root { --primary: #1e40af; --primary-light: #3b82f6; --accent: #0ea5e9; --bg-main: #f0f4f8; --card-bg: #ffffff; --text-main: #1e293b; --text-muted: #64748b; --border: #e2e8f0; --success: #22c55e; --warning: #f59e0b; --danger: #ef4444; --critical: #dc2626; }
     body { background: radial-gradient(circle at 0% 0%, #dbeafe 0%, transparent 40%), radial-gradient(circle at 100% 100%, #e0e7ff 0%, transparent 40%), var(--bg-main); min-height: 100vh; color: var(--text-main); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
@@ -73,14 +72,23 @@
     </div>
 
     <div id="section-form" class="space-y-4">
-      <div id="swyd-type-selector" class="card p-4 hidden anim-fade-in">
-        <label class="text-xs font-semibold text-slate-600 block mb-1.5">🔌 เลือกประเภทอุปกรณ์ Switchyard</label>
-        <select id="swyd-type" onchange="onSwydTypeChange()" class="form-input">
-          <option value="CT">CT - Current Transformer</option><option value="CVT">CVT - Capacitive Voltage Transformer</option>
-          <option value="DS">DS - Disconnect Switch</option><option value="ES">ES - Earth Switch</option>
-          <option value="BRK">BRK - Circuit Breaker</option><option value="SA">SA - Surge Arrester</option>
-        </select>
+      
+      <!-- Sub-type selector for SWYD (Level & Type) -->
+      <div id="swyd-type-selector" class="card p-4 hidden anim-fade-in space-y-4">
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-2">🔌 ระดับแรงดัน (Voltage Level)</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button onclick="onSwydLevelChange('230kV')" id="btn-lvl-230kV" class="px-2 py-2 text-xs font-bold rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-all">230 kV</button>
+            <button onclick="onSwydLevelChange('115kV-L1')" id="btn-lvl-115kV-L1" class="px-2 py-2 text-xs font-bold rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-all">115 kV L1</button>
+            <button onclick="onSwydLevelChange('115kV-L2')" id="btn-lvl-115kV-L2" class="px-2 py-2 text-xs font-bold rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-all">115 kV L2</button>
+          </div>
+        </div>
+        <div id="swyd-type-group" class="hidden">
+          <label class="text-xs font-semibold text-slate-600 block mb-1.5">🔧 ประเภทอุปกรณ์ (Type)</label>
+          <select id="swyd-type" onchange="onSwydTypeChange()" class="form-input"></select>
+        </div>
       </div>
+
       <div class="card p-5 anim-fade-in">
         <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
           <h2 class="section-header !border-b-0 !pb-0"><span>📋</span> 1. ข้อมูลพื้นฐาน (Basic Information)</h2>
@@ -216,9 +224,9 @@
 
   <script>
     // ⚠️ [สำคัญ] แก้ URL ตรงนี้เป็น Web App URL ที่คุณ Deploy ล่าสุด
-    const API_URL = "https://script.google.com/macros/s/AKfycbwwfzxIhyZ-QX3B887j_DRkO_VOqXyN8trJb2wQgqyFhmm03PY26n-6TqDt5QrXa8qKDg/exec"; 
+    const API_URL = "https://script.google.com/macros/s/AKfycbwwfzxIhyZ-QX3B887j_DRkO_VOqXyN8trJb2wQgqyFhmm03PY26n-6TqDt5QrXa8qKDg/exec";
 
-    let currentTab = 'GSUT', currentSwydType = 'CT', equipmentData = {}, currentThresholds = {}, rawDashboardData = [], myChart = null, isSubmitting = false, settingsUnlocked = false;
+    let currentTab = 'GSUT', currentSwydLevel = '', currentSwydType = '', equipmentData = {}, currentThresholds = {}, rawDashboardData = [], myChart = null, isSubmitting = false, settingsUnlocked = false;
     const DRAFT_KEY = 'pmtr_drafts';
 
     const metricLabelsMap = {
@@ -308,21 +316,169 @@
       fetch(`${API_URL}?action=getEquipmentData`).then(r => r.json()).then(data => { equipmentData = data; switchTab('GSUT'); });
     };
 
+    // ============================================================
+    // TAB & SWYD LOGIC
+    // ============================================================
     function switchTab(tab) {
-      if (tab === 'SWYD') tab = currentSwydType;
-      const isSwyd = ['CT','CVT','DS','ES','BRK','SA'].includes(tab);
-      ['GSUT','SST','UAT','SWYD'].forEach(t => { const el = document.getElementById('tab-'+t); if (!el) return; if (t === tab || (t === 'SWYD' && isSwyd)) el.classList.add('active'); else el.classList.remove('active'); });
-      if (isSwyd) { document.getElementById('swyd-type-selector').classList.remove('hidden'); document.getElementById('swyd-type').value = tab; currentSwydType = tab; currentTab = tab; }
-      else { document.getElementById('swyd-type-selector').classList.add('hidden'); currentTab = tab; }
+      // ถ้าเป็น SWYD ให้ไปเรียกฟังก์ชันจัดการของ SWYD โดยเฉพาะ
+      if (tab === 'SWYD') {
+        setupSwydUI();
+        return;
+      }
+      
+      // ถ้าเป็น Tab ปกติ (GSUT, SST, UAT)
+      currentTab = tab;
+      currentSwydLevel = ''; 
+      currentSwydType = '';
+      
+      ['GSUT','SST','UAT','SWYD'].forEach(t => { 
+        const el = document.getElementById('tab-'+t); 
+        if (el) {
+          if (t === tab) el.classList.add('active'); 
+          else el.classList.remove('active'); 
+        }
+      });
+      
+      document.getElementById('swyd-type-selector').classList.add('hidden');
       document.getElementById('dash-tab-name').textContent = currentTab;
       
-      loadEquipmentOptions(); renderDynamicForm(); document.getElementById('history-area').classList.add('hidden');
-      fetch(`${API_URL}?action=getThresholdsForClient&type=${currentTab}`).then(r => r.json()).then(th => { currentThresholds = th || {}; if (typeof refreshLiveBadge === 'function') refreshLiveBadge(); });
+      loadEquipmentOptions(); 
+      renderDynamicForm(); 
+      document.getElementById('history-area').classList.add('hidden');
+      
+      fetch(`${API_URL}?action=getThresholdsForClient&type=${currentTab}`).then(r => r.json()).then(th => { 
+        currentThresholds = th || {}; 
+        if (typeof refreshLiveBadge === 'function') refreshLiveBadge(); 
+      });
+      
       if (typeof loadKksFilterOptions === 'function') loadKksFilterOptions();
       if (!document.getElementById('section-dashboard').classList.contains('hidden')) initDashboard();
     }
 
-    function onSwydTypeChange() { switchTab(document.getElementById('swyd-type').value); }
+    function setupSwydUI() {
+      // อัปเดต Tab แม่
+      ['GSUT','SST','UAT','SWYD'].forEach(t => { 
+        const el = document.getElementById('tab-'+t); 
+        if (el) {
+          if (t === 'SWYD') el.classList.add('active'); 
+          else el.classList.remove('active'); 
+        }
+      });
+      
+      // แสดงกล่องเลือก Level
+      document.getElementById('swyd-type-selector').classList.remove('hidden');
+      
+      // Reset Level & Type ถ้าเป็นครั้งแรก หรือกลับมาจาก Tab อื่น
+      if (!currentSwydLevel) {
+        currentTab = '';
+        currentSwydType = '';
+        document.getElementById('swyd-type-group').classList.add('hidden');
+        document.getElementById('dynamic-form-area').innerHTML = '<div class="text-center py-12 text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200"><div class="text-5xl mb-3">🔌</div><p class="font-semibold">กรุณาเลือกระดับแรงดัน (230 kV / 115 kV L1 / 115 kV L2) ด้านบน</p></div>';
+        document.getElementById('dash-tab-name').textContent = 'SWYD';
+        return;
+      }
+      
+      // อัปเดตปุ่ม Level ที่เลือก
+      ['230kV', '115kV-L1', '115kV-L2'].forEach(lvl => {
+        const btn = document.getElementById('btn-lvl-' + lvl);
+        if (!btn) return;
+        if (lvl === currentSwydLevel) {
+          btn.className = "px-2 py-2 text-xs font-bold rounded-lg border-2 border-blue-500 bg-blue-50 text-blue-700 shadow-sm transition-all";
+        } else {
+          btn.className = "px-2 py-2 text-xs font-bold rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-all";
+        }
+      });
+      
+      // ถ้ามี Level แต่ยังไม่มี Type ให้โหลด Type
+      if (!currentSwydType) {
+        populateSwydTypes();
+      } else {
+        // ถ้ามี Type แล้ว (กลับมาจาก Tab อื่น) ให้โหลดข้อมูลต่อ
+        document.getElementById('swyd-type-group').classList.remove('hidden');
+        document.getElementById('swyd-type').value = currentSwydType;
+        loadEquipmentOptions();
+        renderDynamicForm();
+        document.getElementById('history-area').classList.add('hidden');
+        fetch(`${API_URL}?action=getThresholdsForClient&type=${currentSwydType}`).then(r => r.json()).then(th => { 
+          currentThresholds = th || {}; 
+          if (typeof refreshLiveBadge === 'function') refreshLiveBadge(); 
+        });
+        if (typeof loadKksFilterOptions === 'function') loadKksFilterOptions();
+      }
+      
+      document.getElementById('dash-tab-name').textContent = currentSwydType ? `SWYD (${currentSwydLevel} - ${currentSwydType})` : `SWYD (${currentSwydLevel})`;
+      
+      if (!document.getElementById('section-dashboard').classList.contains('hidden')) initDashboard();
+    }
+
+    function onSwydLevelChange(level) {
+      currentSwydLevel = level;
+      currentSwydType = '';
+      
+      // อัปเดตปุ่มให้เป็น Active
+      ['230kV', '115kV-L1', '115kV-L2'].forEach(lvl => {
+        const btn = document.getElementById('btn-lvl-' + lvl);
+        if (!btn) return;
+        if (lvl === level) {
+          btn.className = "px-2 py-2 text-xs font-bold rounded-lg border-2 border-blue-500 bg-blue-50 text-blue-700 shadow-sm transition-all";
+        } else {
+          btn.className = "px-2 py-2 text-xs font-bold rounded-lg border-2 border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 transition-all";
+        }
+      });
+      
+      populateSwydTypes();
+      document.getElementById('dynamic-form-area').innerHTML = '';
+      document.getElementById('dash-tab-name').textContent = `SWYD (${level})`;
+    }
+
+    function populateSwydTypes() {
+      const allTypes = ['CT', 'CVT', 'BRK', 'SA', 'DS', 'ES'];
+      let availableTypes = [];
+      
+      // กรองเฉพาะ Type ที่มีอยู่ใน Level นั้น
+      const dataForLevel = equipmentData['SWYD'] ? equipmentData['SWYD'].filter(item => item.voltageLevel === currentSwydLevel) : [];
+      
+      availableTypes = allTypes.filter(type => dataForLevel.some(item => item.type === type));
+      
+      const sel = document.getElementById('swyd-type');
+      sel.innerHTML = '<option value="">— เลือกประเภทอุปกรณ์ —</option>';
+      
+      if (availableTypes.length === 0) {
+        sel.innerHTML += '<option value="" disabled>ไม่มีอุปกรณ์ในระดับนี้</option>';
+      } else {
+        availableTypes.forEach(type => {
+          const opt = document.createElement('option');
+          opt.value = type; 
+          opt.textContent = type;
+          sel.appendChild(opt);
+        });
+      }
+      
+      document.getElementById('swyd-type-group').classList.remove('hidden');
+    }
+
+    function onSwydTypeChange() {
+      currentSwydType = document.getElementById('swyd-type').value;
+      if (!currentSwydType) {
+        currentTab = '';
+        document.getElementById('dynamic-form-area').innerHTML = '';
+        return;
+      }
+      currentTab = currentSwydType;
+      document.getElementById('dash-tab-name').textContent = `SWYD (${currentSwydLevel} - ${currentSwydType})`;
+      
+      loadEquipmentOptions();
+      renderDynamicForm();
+      document.getElementById('history-area').classList.add('hidden');
+      
+      fetch(`${API_URL}?action=getThresholdsForClient&type=${currentTab}`).then(r => r.json()).then(th => { 
+        currentThresholds = th || {}; 
+        if (typeof refreshLiveBadge === 'function') refreshLiveBadge(); 
+      });
+      
+      if (typeof loadKksFilterOptions === 'function') loadKksFilterOptions();
+    }
+
     function switchView(view) {
       const secs = { form: 'section-form', dashboard: 'section-dashboard', settings: 'section-settings', drafts: 'section-drafts' };
       const btns = { form: 'view-btn-form', dashboard: 'view-btn-dashboard', settings: 'view-btn-settings', drafts: 'view-btn-drafts' };
@@ -335,21 +491,347 @@
     }
 
     function loadEquipmentOptions() {
-      const select = document.getElementById('kks-code'); select.innerHTML = '';
-      if (equipmentData[currentTab]) {
-        equipmentData[currentTab].forEach(item => { const opt = document.createElement('option'); opt.value = item.rawCode; opt.textContent = item.desc || item.rawCode; select.appendChild(opt); });
+      const select = document.getElementById('kks-code'); 
+      select.innerHTML = '';
+      
+      let itemsToShow = [];
+      if (currentTab === 'GSUT' || currentTab === 'SST' || currentTab === 'UAT') {
+        itemsToShow = equipmentData[currentTab] || [];
+      } else {
+        // สำหรับ SWYD
+        itemsToShow = equipmentData['SWYD'] ? equipmentData['SWYD'].filter(item => item.voltageLevel === currentSwydLevel && item.type === currentSwydType) : [];
       }
+      
+      itemsToShow.forEach(item => { 
+        const opt = document.createElement('option'); 
+        opt.value = item.rawCode; 
+        opt.textContent = item.desc || item.rawCode; 
+        select.appendChild(opt); 
+      });
+      
       updateDescription();
     }
 
     function updateDescription() {
-      const select = document.getElementById('kks-code'); if (!equipmentData[currentTab]) return;
-      const item = equipmentData[currentTab].find(i => i.rawCode === select.value);
+      const select = document.getElementById('kks-code'); 
+      if (!equipmentData) return;
+      
+      let item = null;
+      if (currentTab === 'GSUT' || currentTab === 'SST' || currentTab === 'UAT') {
+        item = (equipmentData[currentTab] || []).find(i => i.rawCode === select.value);
+      } else {
+        item = (equipmentData['SWYD'] || []).find(i => i.rawCode === select.value);
+      }
+      
       document.getElementById('kks-raw').value = item ? item.rawCode : '';
       document.getElementById('kks-sortfield').value = (item && item.sortField) ? item.sortField : '—';
     }
 
     function onKksChange() { updateDescription(); loadHistory(); refreshLiveBadge(); }
+
+    // ============================================================
+    // RENDER DYNAMIC FORM
+    // ============================================================
+    function renderDynamicForm() {
+      const container = document.getElementById('dynamic-form-area');
+      let html = '';
+
+      if (currentTab === 'GSUT') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🌡️</span> 2. Temperature & Electrical</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amb. Temp (°C)</label><input type="number" step="0.1" data-param="ambTemp" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Gen (kV)</label><input type="number" step="0.1" data-param="voltGen" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Trans (kV)</label><input type="number" step="0.1" data-param="voltTrans" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Gen (A)</label><input type="number" step="0.1" data-param="ampGen" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Trans (A)</label><input type="number" step="0.1" data-param="ampTrans" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Active Pwr (MW)</label><input type="number" step="0.1" data-param="activePwr" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Reactive Pwr (MVAR)</label><input type="number" step="0.1" data-param="reactivePwr" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🛢️</span> 3. Oil Temp, Oil Level & Winding Temp</h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Temp Local (°C)</label><input type="number" step="0.1" data-param="oilTempLocal" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Temp DCS (°C)</label><input type="number" step="0.1" data-param="oilTempDcs" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Main Oil Level (%)</label><input type="number" step="0.1" data-param="oilLevel" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Temp Local (°C)</label><input type="number" step="0.1" data-param="windingTempLocal" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Temp DCS (°C)</label><input type="number" step="0.1" data-param="windingTempDcs" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🌀</span> 4. Cooling Fans (1-10)</h2>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
+              ${Array.from({length: 10}, (_, i) => `
+                <div><label class="text-xs font-semibold text-slate-500 block mb-1">Fan ${i+1}</label>
+                <select data-param="fan_${i+1}" class="status-select" onchange="updateSelectColor(this)">
+                  <option value="On">On</option><option value="Off">Off</option><option value="Not available">Not available</option>
+                </select></div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>💧</span> 5. Oil Pumps (1-4)</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              ${Array.from({length: 4}, (_, i) => `
+                <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Pump ${i+1}</label>
+                <select data-param="pump_${i+1}" class="status-select" onchange="updateSelectColor(this)">
+                  <option value="On">On</option><option value="Off" selected>Off</option><option value="Not available">Not available</option>
+                </select></div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🔧</span> 6. Other Equipment</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Silica Gel</label><select data-param="silicaGel" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Change">Change</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">DGA Online</label><select data-param="dgaOnline" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Alarm">Alarm</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">HV Bush Oil</label><select data-param="hvBushOil" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Tap Position</label><input type="text" data-param="tapPosition" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">OLTC Counter</label><input type="number" data-param="oltcCounter" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Counter</label><input type="number" data-param="saCounter" class="form-input"></div>
+              <div class="md:col-span-2"><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Leakage (mA) ⚠ limit ≤ 5</label><input type="number" step="0.1" data-param="saLeakage" class="form-input" placeholder="mA"></div>
+            </div>
+          </div>
+        `;
+      } else if (currentTab === 'SST') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🌡️</span> 2. Temperature & Voltage</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amb. Temp (°C)</label><input type="number" step="0.1" data-param="ambTemp" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Sub (kV)</label><input type="number" step="0.1" data-param="voltSub" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Trans A (kV)</label><input type="number" step="0.1" data-param="voltTransA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Trans B (kV)</label><input type="number" step="0.1" data-param="voltTransB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Trans C (kV)</label><input type="number" step="0.1" data-param="voltTransC" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>⚡</span> 3. Current (Ampere)</h2>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Sub A</label><input type="number" step="0.1" data-param="ampSubA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Sub B</label><input type="number" step="0.1" data-param="ampSubB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Sub C</label><input type="number" step="0.1" data-param="ampSubC" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Trans A</label><input type="number" step="0.1" data-param="ampTransA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Trans B</label><input type="number" step="0.1" data-param="ampTransB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Trans C</label><input type="number" step="0.1" data-param="ampTransC" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🛢️</span> 4. Oil Temp, Oil Level & Winding Temp</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Temp Local (°C)</label><input type="number" step="0.1" data-param="oilTempLocal" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Temp DCS (°C)</label><input type="number" step="0.1" data-param="oilTempDcs" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Main Oil Level (%)</label><input type="number" step="0.1" data-param="oilLevel" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">OLTC Oil Level</label><select data-param="oltcOilLevel" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Local A (°C)</label><input type="number" step="0.1" data-param="windingTempLocalA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Local B (°C)</label><input type="number" step="0.1" data-param="windingTempLocalB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Local C (°C)</label><input type="number" step="0.1" data-param="windingTempLocalC" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding DCS A (°C)</label><input type="number" step="0.1" data-param="windingTempDcsA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding DCS B (°C)</label><input type="number" step="0.1" data-param="windingTempDcsB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding DCS C (°C)</label><input type="number" step="0.1" data-param="windingTempDcsC" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🌀</span> 5. Cooling Fans (1-8)</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              ${Array.from({length: 8}, (_, i) => `
+                <div><label class="text-xs font-semibold text-slate-500 block mb-1">Fan ${i+1}</label>
+                <select data-param="fan_${i+1}" class="status-select" onchange="updateSelectColor(this)">
+                  <option value="On">On</option><option value="Off" selected>Off</option><option value="Not available">Not available</option>
+                </select></div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🔧</span> 6. Other Equipment</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Silica Gel</label><select data-param="silicaGel" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Change">Change</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Filter</label><select data-param="oilFilter" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="clogged">clogged</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Tap Position</label><input type="text" data-param="tapPosition" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">OLTC Counter</label><input type="number" data-param="oltcCounter" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">HV Bush Oil A</label><select data-param="hvBushOilA" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">HV Bush Oil B</label><select data-param="hvBushOilB" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">HV Bush Oil C</label><select data-param="hvBushOilC" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Counter A</label><input type="number" data-param="saCounterA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Counter B</label><input type="number" data-param="saCounterB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Counter C</label><input type="number" data-param="saCounterC" class="form-input"></div>
+              <div class="md:col-span-1"><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Leakage A (mA) ⚠ ≤ 5</label><input type="number" step="0.1" data-param="saLeakageA" class="form-input" placeholder="mA"></div>
+              <div class="md:col-span-1"><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Leakage B (mA) ⚠ ≤ 5</label><input type="number" step="0.1" data-param="saLeakageB" class="form-input" placeholder="mA"></div>
+              <div class="md:col-span-1"><label class="text-xs font-semibold text-slate-600 block mb-1.5">SA Leakage C (mA) ⚠ ≤ 5</label><input type="number" step="0.1" data-param="saLeakageC" class="form-input" placeholder="mA"></div>
+            </div>
+          </div>
+        `;
+      } else if (currentTab === 'UAT') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🌡️</span> 2. Temperature & Voltage</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amb. Temp (°C)</label><input type="number" step="0.1" data-param="ambTemp" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Gen (kV)</label><input type="number" step="0.1" data-param="voltGen" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Tr 14BBA (kV)</label><input type="number" step="0.1" data-param="voltTrans14BBA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Volt Tr 14BBB (kV)</label><input type="number" step="0.1" data-param="voltTrans14BBB" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>⚡</span> 3. Current (Ampere)</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp Gen</label><input type="number" step="0.1" data-param="ampGen" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp 14BBA-A</label><input type="number" step="0.1" data-param="amp14BBA_A" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp 14BBA-B</label><input type="number" step="0.1" data-param="amp14BBA_B" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp 14BBA-C</label><input type="number" step="0.1" data-param="amp14BBA_C" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp 14BBB-A</label><input type="number" step="0.1" data-param="amp14BBB_A" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp 14BBB-B</label><input type="number" step="0.1" data-param="amp14BBB_B" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Amp 14BBB-C</label><input type="number" step="0.1" data-param="amp14BBB_C" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🛢️</span> 4. Oil Temp, Oil Level & Winding Temp</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Temp Local (°C)</label><input type="number" step="0.1" data-param="oilTempLocal" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Temp DCS (°C)</label><input type="number" step="0.1" data-param="oilTempDcs" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Main Oil Level (%)</label><input type="number" step="0.1" data-param="oilLevel" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">OLTC Oil Level</label><select data-param="oltcOilLevel" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Local A (°C)</label><input type="number" step="0.1" data-param="windingTempLocalA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Local B (°C)</label><input type="number" step="0.1" data-param="windingTempLocalB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding Local C (°C)</label><input type="number" step="0.1" data-param="windingTempLocalC" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding DCS A (°C)</label><input type="number" step="0.1" data-param="windingTempDcsA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding DCS B (°C)</label><input type="number" step="0.1" data-param="windingTempDcsB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Winding DCS C (°C)</label><input type="number" step="0.1" data-param="windingTempDcsC" class="form-input"></div>
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🌀</span> 5. Cooling Fans (1-12)</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              ${Array.from({length: 12}, (_, i) => `
+                <div><label class="text-xs font-semibold text-slate-500 block mb-1">Fan ${i+1}</label>
+                <select data-param="fan_${i+1}" class="status-select" onchange="updateSelectColor(this)">
+                  <option value="On">On</option><option value="Off" selected>Off</option><option value="Not available">Not available</option>
+                </select></div>
+              `).join('')}
+            </div>
+          </div>
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🔧</span> 6. Other Equipment</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Silica Gel</label><select data-param="silicaGel" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Change">Change</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Filter A</label><select data-param="oilFilterA" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="clogged">clogged</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Filter B</label><select data-param="oilFilterB" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="clogged">clogged</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Filter C</label><select data-param="oilFilterC" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="clogged">clogged</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Tap Position</label><input type="text" data-param="tapPosition" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">OLTC Counter A</label><input type="number" data-param="oltcCounterA" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">OLTC Counter B</label><input type="number" data-param="oltcCounterB" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">OLTC Counter C</label><input type="number" data-param="oltcCounterC" class="form-input"></div>
+            </div>
+          </div>
+        `;
+      } else if (currentTab === 'CT') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🔌</span> CT - Current Transformer</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Visual Inspection</label><select data-param="visual" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Level</label><select data-param="oilLevel" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Leak</label><select data-param="oilLeak" class="status-select" onchange="updateSelectColor(this)"><option value="No">No</option><option value="Yes">Yes</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Bushing Condition</label><select data-param="bushing" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Cracked">Cracked</option><option value="Dirty">Dirty</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Terminal Tightness</label><select data-param="terminal" class="status-select" onchange="updateSelectColor(this)"><option value="Tight">Tight</option><option value="Loose">Loose</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Grounding</label><select data-param="grounding" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+            </div>
+          </div>
+        `;
+      } else if (currentTab === 'CVT') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🔌</span> CVT - Capacitive Voltage Transformer</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Visual Inspection</label><select data-param="visual" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Level</label><select data-param="oilLevel" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Low">Low</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Oil Leak</label><select data-param="oilLeak" class="status-select" onchange="updateSelectColor(this)"><option value="No">No</option><option value="Yes">Yes</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Capacitor Condition</label><select data-param="capacitor" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Terminal Tightness</label><select data-param="terminal" class="status-select" onchange="updateSelectColor(this)"><option value="Tight">Tight</option><option value="Loose">Loose</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Grounding</label><select data-param="grounding" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+            </div>
+          </div>
+        `;
+      } else if (currentTab === 'DS' || currentTab === 'ES') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>🔧</span> ${currentTab} - Switch</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Status (Position)</label><select data-param="statusPos" class="status-select" onchange="updateSelectColor(this)"><option value="Close">Close</option><option value="Open">Open</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Visual Inspection</label><select data-param="visual" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Contact Condition</label><select data-param="contact" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Burned">Burned</option><option value="Worn">Worn</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Mechanism</label><select data-param="mechanism" class="status-select" onchange="updateSelectColor(this)"><option value="Smooth">Smooth</option><option value="Stuck">Stuck</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Interlock</label><select data-param="interlock" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Grounding</label><select data-param="grounding" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+            </div>
+          </div>
+        `;
+      } else if (currentTab === 'BRK') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>⚡</span> BRK - Circuit Breaker</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Status (Position)</label><select data-param="statusPos" class="status-select" onchange="updateSelectColor(this)"><option value="Close">Close</option><option value="Open">Open</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Motor Charge Spring</label><select data-param="motorCharge" class="status-select" onchange="updateSelectColor(this)"><option value="Charged">Charged</option><option value="Not Charged">Not Charged</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Visual Inspection</label><select data-param="visual" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">SF6 / Oil Pressure (bar)</label><input type="number" step="0.1" data-param="sf6Pressure" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Counter (Operations)</label><input type="number" data-param="counter" class="form-input"></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Control Circuit</label><select data-param="controlCircuit" class="status-select" onchange="updateSelectColor(this)"><option value="Normal">Normal</option><option value="Abnormal">Abnormal</option></select></div>
+              <div><label class="text-xs font-semibold text-slate-600 block mb-1.5">Alarm Indication</label><select data-param="alarmIndication" class="status-select" onchange="updateSelectColor(this)"><option value="None">None</option><option value="Alarm">Alarm</option></select></div>
+            </div>
+          </div>
+        `;
+      } else if (currentTab === 'SA') {
+        html = `
+          <div class="card p-5 anim-fade-in">
+            <h2 class="section-header mb-4"><span>⚡</span> SA - Surge Arrester</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1.5">Leakage Current (mA) ⚠ limit ≤ 5</label>
+                <input type="number" step="0.1" data-param="leakageCurrent" class="form-input" placeholder="mA">
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1.5">Counter (จำนวนนับ)</label>
+                <input type="number" data-param="counter" class="form-input">
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1.5">Visual Inspection</label>
+                <select data-param="visual" class="status-select" onchange="updateSelectColor(this)">
+                  <option value="Normal">Normal</option><option value="Abnormal">Abnormal</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1.5">Grounding</label>
+                <select data-param="grounding" class="status-select" onchange="updateSelectColor(this)">
+                  <option value="Normal">Normal</option><option value="Abnormal">Abnormal</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-600 block mb-1.5">Insulator Condition</label>
+                <select data-param="insulator" class="status-select" onchange="updateSelectColor(this)">
+                  <option value="Normal">Normal</option><option value="Cracked">Cracked</option><option value="Dirty">Dirty</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        // กรณีที่ยังไม่ได้เลือก Type
+        html = '<div class="text-center py-12 text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200"><div class="text-5xl mb-3">🔧</div><p class="font-semibold">กรุณาเลือกประเภทอุปกรณ์ (Type) ด้านบน</p></div>';
+      }
+      
+      container.innerHTML = html;
+      
+      if (html.includes('data-param')) {
+        container.querySelectorAll('[data-param]').forEach(el => { el.addEventListener('input', refreshLiveBadge); el.addEventListener('change', refreshLiveBadge); });
+        container.querySelectorAll('.status-select').forEach(sel => updateSelectColor(sel));
+        refreshLiveBadge();
+      }
+    }
+
+    function updateSelectColor(sel) { sel.setAttribute('data-status', sel.value); }
 
     // ============================================================
     // HISTORY
@@ -380,9 +862,174 @@
       });
     }
 
-    // ... (ฟังก์ชัน renderDynamicForm, refreshLiveBadge, submitForm, initDashboard, Settings ทั้งหมด เหมือนเดิม แต่เปลี่ยน google.script.run เป็น fetch) ...
-    // *เพื่อความกระชับ ผมละเว้น UI บางส่วนไว้ แต่การทำงานเบื้องหลังเปลี่ยนเป็น Fetch หมดแล้ว
-    // *คุณสามารถก๊อปปี้ฟังก์ชัน renderDynamicForm และอื่นๆ จากโค้ดเดิมมาใส่ตรงนี้ได้เลยครับ
+    // ============================================================
+    // MODAL
+    // ============================================================
+    function showModal({ icon, title, body, actions }) {
+      document.getElementById('modal-icon').textContent = icon || "⚠️"; document.getElementById('modal-title').textContent = title || ""; document.getElementById('modal-body').innerHTML = body || "";
+      const actEl = document.getElementById('modal-actions'); actEl.innerHTML = '';
+      (actions || []).forEach(a => { const btn = document.createElement('button'); btn.textContent = a.text; btn.className = a.cls || 'bg-slate-200 text-slate-700 modal-btn'; btn.onclick = a.onClick || closeModal; actEl.appendChild(btn); });
+      const ov = document.getElementById('modal-overlay'); ov.classList.remove('hidden'); ov.classList.add('flex');
+    }
+    function closeModal() { const ov = document.getElementById('modal-overlay'); ov.classList.add('hidden'); ov.classList.remove('flex'); }
+
+    // ============================================================
+    // SUBMIT & EVALUATE
+    // ============================================================
+    function collectFormData() { const fd = {}; document.querySelectorAll('#dynamic-form-area [data-param]').forEach(el => { fd[el.getAttribute('data-param')] = el.value; }); return fd; }
+    function refreshLiveBadge() {
+      const badge = document.getElementById('live-status-badge'); if (!badge || !currentThresholds) return;
+      const formData = collectFormData(); let worst = "Normal"; let alertCount = 0;
+      for (const key in currentThresholds) {
+        const th = currentThresholds[key]; const raw = formData[key]; if (raw === "" || raw === null || raw === undefined) continue; const val = parseFloat(raw); if (isNaN(val)) continue;
+        let level = null; if (th.critMax !== null && val >= th.critMax) level = "Critical"; else if (th.alarmMax !== null && val >= th.alarmMax) level = "Alarm"; else if (th.warnMax !== null && val >= th.warnMax) level = "Warning"; else if (th.alarmMin !== null && val <= th.alarmMin) level = "Alarm"; else if (th.warnMin !== null && val <= th.warnMin) level = "Warning";
+        const inputEl = document.querySelector(`[data-param="${key}"]`);
+        if (inputEl) {
+          inputEl.classList.remove('highlight-warn', 'highlight-alarm', 'highlight-crit'); const oldMsg = inputEl.parentElement.querySelector('.alert-msg'); if (oldMsg) oldMsg.remove();
+          if (level === "Warning") inputEl.classList.add('highlight-warn'); if (level === "Alarm") inputEl.classList.add('highlight-alarm'); if (level === "Critical") inputEl.classList.add('highlight-crit');
+          if (level) { const msg = document.createElement('div'); msg.className = 'alert-msg ' + (level === "Critical" ? 'text-red-600' : level === "Alarm" ? 'text-orange-600' : 'text-yellow-600'); msg.textContent = `⚠ ${level} — เกิน limit ${th.warnMax || th.warnMin || ''} ${th.unit || ''}`; inputEl.parentElement.appendChild(msg); }
+        }
+        if (level) { alertCount++; if (level === "Critical") worst = "Critical"; else if (level === "Alarm" && worst !== "Critical") worst = "Alarm"; else if (level === "Warning" && worst === "Normal") worst = "Warning"; }
+      }
+      const map = { Normal: ['badge-normal', '🟢 ปกติ'], Warning: ['badge-warning', '🟡 Warning'], Alarm: ['badge-alarm', '🟠 Alarm'], Critical: ['badge-critical', '🔴 Critical'] };
+      const [cls, txt] = map[worst]; badge.className = cls; badge.textContent = txt + (alertCount > 0 ? ` (${alertCount})` : "");
+    }
+    function evaluateLocal(formData, thresholds) {
+      const alerts = []; if (!thresholds) return { overall: "Normal", alerts: [] };
+      for (const key in formData) { const th = thresholds[key]; if (!th) continue; const val = parseFloat(formData[key]); if (isNaN(val)) continue; let level = null, limit = null; if (th.critMax !== null && val >= th.critMax) { level = "Critical"; limit = th.critMax; } else if (th.alarmMax !== null && val >= th.alarmMax) { level = "Alarm"; limit = th.alarmMax; } else if (th.warnMax !== null && val >= th.warnMax) { level = "Warning"; limit = th.warnMax; } else if (th.alarmMin !== null && val <= th.alarmMin) { level = "Alarm"; limit = th.alarmMin; } else if (th.warnMin !== null && val <= th.warnMin) { level = "Warning"; limit = th.warnMin; } if (level) alerts.push({ param: key, label: th.label, value: val, unit: th.unit, level, limit }); }
+      let overall = "Normal"; if (alerts.some(a => a.level === "Critical")) overall = "Critical"; else if (alerts.some(a => a.level === "Alarm")) overall = "Alarm"; else if (alerts.some(a => a.level === "Warning")) overall = "Warning";
+      return { overall, alerts };
+    }
+    function submitForm() {
+      if (isSubmitting) return;
+      const inspector = document.getElementById('inspector').value.trim();
+      if (!inspector) { showModal({ icon: "⚠️", title: "กรุณาเลือกผู้ตรวจสอบ", body: "<p>โปรดเลือกชื่อผู้ตรวจสอบก่อนบันทึก</p>", actions: [{ text: "ตกลง", cls: "bg-blue-600 text-white modal-btn", onClick: closeModal }] }); return; }
+      
+      if (['SWYD'].includes(currentTab) || !currentTab) {
+        showModal({ icon: "⚠️", title: "กรุณาเลือกอุปกรณ์", body: "<p>โปรดเลือกประเภทอุปกรณ์และอุปกรณ์ก่อนบันทึก</p>", actions: [{ text: "ตกลง", cls: "bg-blue-600 text-white modal-btn", onClick: closeModal }] }); 
+        return;
+      }
+
+      const select = document.getElementById('kks-code'); const item = equipmentData[currentTab] ? equipmentData[currentTab].find(i => i.rawCode === select.value) : null; const formData = collectFormData();
+      let payload = { sheetType: currentTab, kksCode: select.value, description: item ? item.desc : '', inspectionDate: document.getElementById('inspect-date').value, inspector: inspector, status: "Normal", remarks: document.getElementById('remarks').value, formData: formData };
+      payload.primaryTemp = formData.oilTempLocal || formData.sf6Pressure || ""; payload.primaryOil = formData.oilLevel || "";
+      const preview = evaluateLocal(formData, currentThresholds);
+      if (preview.overall === "Alarm" || preview.overall === "Critical") {
+        const listHtml = preview.alerts.map(a => `<li>• <b>${a.label}</b>: ${a.value} ${a.unit} (limit ${a.limit}) — <span class="text-orange-600 font-bold">${a.level}</span></li>`).join("");
+        showModal({ icon: preview.overall === "Critical" ? "🔴" : "🟠", title: `พบ ${preview.alerts.length} รายการ ${preview.overall}`, body: `<ul class="text-xs space-y-1">${listHtml}</ul><p class="pt-2 font-semibold">ต้องการบันทึกต่อหรือไม่?</p>`, actions: [{ text: "กลับไปแก้ไข", cls: "bg-slate-200 text-slate-700 modal-btn", onClick: closeModal }, { text: "บันทึกต่อ", cls: "bg-red-600 text-white modal-btn", onClick: () => { closeModal(); doSubmit(payload); } }] });
+        return;
+      }
+      doSubmit(payload);
+    }
+    function doSubmit(payload) {
+      if (isSubmitting) return;
+      if (!navigator.onLine) {
+        const draft = addDraft(payload);
+        showModal({ icon: "📦", title: "บันทึกในเครื่องแล้ว", body: `<p>ไม่มี internet — บันทึกเป็น Draft เรียบร้อย</p><p class="text-xs text-slate-500 mt-2">📦 Draft #${getDrafts().length}</p>`, actions: [{ text: "ดู Draft", cls: "bg-slate-200 text-slate-700 modal-btn", onClick: () => { closeModal(); switchView('drafts'); } }, { text: "ตกลง", cls: "bg-blue-600 text-white modal-btn", onClick: closeModal }] });
+        return;
+      }
+      isSubmitting = true;
+      const btn = document.getElementById('submit-btn'); const oldText = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก...';
+
+      fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'saveData', ...payload }) })
+        .then(res => res.json())
+        .then(res => {
+          isSubmitting = false; btn.disabled = false; btn.innerHTML = oldText;
+          if (!res.success) { showModal({ icon: "❌", title: "เกิดข้อผิดพลาด", body: `<p>${res.message}</p>`, actions: [{ text: "ตกลง", cls: "bg-red-600 text-white modal-btn", onClick: closeModal }] }); return; }
+          const icon = res.status === "Critical" ? "🔴" : res.status === "Alarm" ? "🟠" : res.status === "Warning" ? "🟡" : "✅";
+          let body = `<p>${res.message}</p>`;
+          if (res.alertCount > 0) { body += `<p class="pt-2 font-bold">สถานะ: <span class="${res.status === 'Critical' ? 'text-red-600' : res.status === 'Alarm' ? 'text-orange-600' : res.status === 'Warning' ? 'text-yellow-600' : 'text-green-600'}">${res.status}</span> (${res.alertCount} รายการ)</p>`; body += `<ul class="text-xs space-y-1 pt-1">${res.alerts.map(a => `<li>• ${a.label}: ${a.value} ${a.unit} (limit ${a.limit})</li>`).join("")}</ul>`; }
+          showModal({ icon: icon, title: "บันทึกสำเร็จ", body: body, actions: [{ text: "ดู Dashboard", cls: "bg-slate-200 text-slate-700 modal-btn", onClick: () => { closeModal(); switchView('dashboard'); } }, { text: "ตกลง", cls: "bg-blue-600 text-white modal-btn", onClick: closeModal }] });
+        })
+        .catch(err => { isSubmitting = false; btn.disabled = false; btn.innerHTML = oldText; showModal({ icon: "❌", title: "เกิดข้อผิดพลาด", body: `<p>${err.message}</p>`, actions: [{ text: "ตกลง", cls: "bg-red-600 text-white modal-btn", onClick: closeModal }] }); });
+    }
+
+    // ============================================================
+    // DASHBOARD
+    // ============================================================
+    function loadKksFilterOptions() {
+      if (!currentTab) return;
+      fetch(`${API_URL}?action=getKksListFromLog&type=${currentTab}`).then(r => r.json()).then(list => {
+        const sel = document.getElementById('dash-kks-filter'); const current = sel.value;
+        sel.innerHTML = '<option value="">— ทั้งหมด —</option>';
+        (list || []).forEach(item => { const opt = document.createElement('option'); opt.value = item.kks; opt.textContent = item.kks; sel.appendChild(opt); });
+        if (current) sel.value = current;
+      });
+    }
+    function initDashboard() {
+      if (!currentTab) return;
+      const kks = document.getElementById('dash-kks-filter').value || ""; const days = document.getElementById('dash-date-filter').value || "0";
+      fetch(`${API_URL}?action=getDashboardMetricsV2&type=${currentTab}&kks=${kks}&days=${days}`).then(r => r.json()).then(result => {
+        rawDashboardData = result.records || []; const summary = result.summary || {};
+        document.getElementById('sum-total').textContent = summary.total || 0; document.getElementById('sum-normal').textContent = summary.normal || 0; document.getElementById('sum-warning').textContent = summary.warning || 0; document.getElementById('sum-alarm').textContent = summary.alarm || 0; document.getElementById('sum-critical').textContent = summary.critical || 0;
+        document.getElementById('dash-last-update').textContent = "Last update: " + (summary.lastUpdate ? formatDate(summary.lastUpdate) : "—");
+        document.getElementById('record-count').textContent = `จำนวนข้อมูล: ${rawDashboardData.length} รายการ`;
+        if (rawDashboardData.length === 0) { document.getElementById('metrics-checkbox-container').innerHTML = '<span class="text-gray-400 text-xs">ไม่พบข้อมูลตามเงื่อนไขที่เลือก</span>'; if (myChart) myChart.destroy(); return; }
+        const allKeysSet = new Set(); rawDashboardData.forEach(rec => Object.keys(rec).forEach(k => allKeysSet.add(k)));
+        const keys = Array.from(allKeysSet).filter(k => k !== 'inspectionDate' && k !== 'kksCode' && k !== 'inspector' && k !== 'status' && k !== 'description' && k !== 'timestamp' && k !== 'overallStatus' && k !== 'alertCount' && !k.startsWith('fan_') && !k.startsWith('pump_') && k !== 'silicaGel' && k !== 'dgaOnline' && k !== 'hvBushOil' && k !== 'hvBushOilA' && k !== 'hvBushOilB' && k !== 'hvBushOilC' && k !== 'tapPosition' && k !== 'oltcCounter' && k !== 'oltcCounterA' && k !== 'oltcCounterB' && k !== 'oltcCounterC' && k !== 'saCounter' && k !== 'saCounterA' && k !== 'saCounterB' && k !== 'saCounterC');
+        renderCheckboxes(keys); updateChart();
+      });
+    }
+    function renderCheckboxes(keys) {
+      const container = document.getElementById('metrics-checkbox-container'); const prevSelected = {}; container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => { prevSelected[cb.value] = true; }); const hadPrev = Object.keys(prevSelected).length > 0;
+      container.innerHTML = ''; const currentLabels = metricLabelsMap[currentTab] || {};
+      keys.forEach((key, index) => {
+        const labelText = currentLabels[key] || key; const isChecked = hadPrev ? (prevSelected[key] ? 'checked' : '') : (index < 2 ? 'checked' : '');
+        const div = document.createElement('div'); div.className = "flex items-center space-x-2 bg-white p-2 rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer";
+        div.innerHTML = `<input type="checkbox" id="chk_${key}" value="${key}" ${isChecked} onchange="updateChart()" class="rounded text-blue-600 focus:ring-blue-500"><label for="chk_${key}" class="text-slate-700 cursor-pointer text-xs truncate flex-1" title="${labelText}">${labelText}</label>`;
+        container.appendChild(div);
+      });
+    }
+    function updateChart() {
+      if (rawDashboardData.length === 0) return; const checkboxes = document.querySelectorAll('#metrics-checkbox-container input[type="checkbox"]:checked'); const selectedKeys = Array.from(checkboxes).map(cb => cb.value);
+      if (selectedKeys.length === 0) { if (myChart) myChart.destroy(); return; }
+      const currentLabels = metricLabelsMap[currentTab] || {}; const labels = rawDashboardData.map(item => formatDateShort(item.inspectionDate));
+      const datasets = selectedKeys.map((key, idx) => { const color = chartColors[idx % chartColors.length]; const dataValues = rawDashboardData.map(item => parseFloat(item[key]) || 0); return { label: currentLabels[key] || key, data: dataValues, borderColor: color, backgroundColor: color.replace('rgb', 'rgba').replace(')', ', 0.1)'), borderWidth: 2.5, tension: 0.3, fill: false, pointRadius: 4, pointHoverRadius: 7, pointBackgroundColor: color, pointBorderColor: '#fff', pointBorderWidth: 2 }; });
+      if (selectedKeys.length === 1) { const key = selectedKeys[0]; const th = currentThresholds[key]; if (th) { const limitDefs = [ { value: th.warnMax, label: "Warning", color: "rgba(245, 158, 11, 0.7)" }, { value: th.alarmMax, label: "Alarm", color: "rgba(249, 115, 22, 0.7)" }, { value: th.critMax, label: "Critical", color: "rgba(220, 38, 38, 0.85)" }, { value: th.warnMin, label: "Warn Min", color: "rgba(245, 158, 11, 0.5)" }, { value: th.alarmMin, label: "Alarm Min", color: "rgba(249, 115, 22, 0.5)" } ]; limitDefs.forEach(def => { if (def.value === null || def.value === undefined) return; datasets.push({ label: def.label + " Limit", data: labels.map(() => def.value), borderColor: def.color, borderWidth: 1.5, borderDash: [8, 4], pointRadius: 0, fill: false, tension: 0 }); }); } }
+      renderAutoScalingChart(labels, datasets);
+    }
+    function renderAutoScalingChart(labels, datasets) {
+      const ctx = document.getElementById('trendChart').getContext('2d'); if (myChart) myChart.destroy(); const rotate = labels.length > 10;
+      myChart = new Chart(ctx, { type: 'line', data: { labels: labels, datasets: datasets }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, animation: { duration: 800, easing: 'easeOutQuart' }, scales: { y: { type: 'linear', display: true, position: 'left', grid: { color: 'rgba(30, 64, 175, 0.06)' }, title: { display: true, text: 'Value Scale (Auto-Scaled)', color: '#1e40af', font: { weight: 'bold' } } }, x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: rotate ? 45 : 0, minRotation: rotate ? 45 : 0, maxTicksLimit: 20, font: { size: 11 } } } }, plugins: { legend: { position: 'top', labels: { boxWidth: 14, font: { size: 11, weight: '600' }, padding: 12 } }, tooltip: { mode: 'index', intersect: false, backgroundColor: 'rgba(15, 23, 42, 0.92)', titleFont: { size: 12, weight: 'bold' }, bodyFont: { size: 11 }, padding: 10, cornerRadius: 8, callbacks: { title: function(items) { const idx = items[0].dataIndex; return formatDate(rawDashboardData[idx].inspectionDate); } } } } } });
+    }
+
+    // ============================================================
+    // SETTINGS
+    // ============================================================
+    function unlockSettings() {
+      const pin = document.getElementById('settings-pin').value.trim(); if (!pin) { showModal({ icon: "⚠️", title: "กรุณาใส่ PIN", body: "<p>โปรดใส่ PIN ก่อนดำเนินการ</p>", actions: [{ text: "ตกลง", cls: "bg-blue-600 text-white modal-btn", onClick: closeModal }] }); return; }
+      fetch(`${API_URL}?action=verifyPin&pin=${encodeURIComponent(pin)}`).then(r => r.json()).then(res => {
+        if (res.success) { settingsUnlocked = true; document.getElementById('settings-pin-form').classList.add('hidden'); document.getElementById('settings-content').classList.remove('hidden'); document.getElementById('settings-content').classList.add('anim-fade-in'); const badge = document.getElementById('settings-pin-badge'); badge.className = 'badge-normal'; badge.textContent = '🔓 ปลดล็อคแล้ว'; loadSettingsTable(); }
+        else { showModal({ icon: "❌", title: "PIN ไม่ถูกต้อง", body: "<p>กรุณาลองใหม่อีกครั้ง</p>", actions: [{ text: "ตกลง", cls: "bg-red-600 text-white modal-btn", onClick: closeModal }] }); document.getElementById('settings-pin').value = ''; }
+      });
+    }
+    function lockSettings() { settingsUnlocked = false; document.getElementById('settings-pin').value = ''; document.getElementById('settings-pin-form').classList.remove('hidden'); document.getElementById('settings-content').classList.add('hidden'); const badge = document.getElementById('settings-pin-badge'); badge.className = 'badge-idle'; badge.textContent = '🔒 ยังไม่ปลดล็อค'; }
+    function loadSettingsTable() {
+      if (!settingsUnlocked) return; const type = document.getElementById('settings-type').value; const container = document.getElementById('settings-table-container'); container.innerHTML = '<div class="text-center py-8 text-slate-400">⏳ กำลังโหลด...</div>';
+      fetch(`${API_URL}?action=getAllThresholds&type=${type}`).then(r => r.json()).then(rows => {
+        if (!rows || rows.length === 0) { container.innerHTML = '<div class="text-center py-8 text-slate-400">ไม่พบข้อมูล</div>'; return; }
+        let html = `<div class="overflow-x-auto rounded-xl border border-slate-200"><table class="w-full text-xs"><thead class="bg-gradient-to-r from-blue-700 to-blue-500 text-white"><tr><th class="p-3 text-left font-semibold">Parameter</th><th class="p-3 text-center font-semibold">Unit</th><th class="p-3 text-center font-semibold">Warning</th><th class="p-3 text-center font-semibold">Alarm</th><th class="p-3 text-center font-semibold">Critical</th><th class="p-3 text-center font-semibold">บันทึก</th></tr></thead><tbody>`;
+        rows.forEach((row, i) => { html += `<tr class="${i % 2 ? 'bg-slate-50' : 'bg-white'} border-t border-slate-100"><td class="p-3"><div class="font-semibold text-slate-800">${row.label}</div><div class="text-slate-400 text-[10px]">${row.param}</div></td><td class="p-3 text-center text-slate-500">${row.unit || '—'}</td><td class="p-3 text-center"><input type="number" value="${row.warnMax !== "" ? row.warnMax : ""}" data-row="${row.rowIndex}" data-field="warn" class="w-24 p-1.5 border border-slate-300 rounded-lg text-center focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"></td><td class="p-3 text-center"><input type="number" value="${row.alarmMax !== "" ? row.alarmMax : ""}" data-row="${row.rowIndex}" data-field="alarm" class="w-24 p-1.5 border border-slate-300 rounded-lg text-center focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"></td><td class="p-3 text-center"><input type="number" value="${row.critMax !== "" ? row.critMax : ""}" data-row="${row.rowIndex}" data-field="crit" class="w-24 p-1.5 border border-slate-300 rounded-lg text-center focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"></td><td class="p-3 text-center"><button onclick="saveThresholdRow('${row.type}', '${row.param}', ${row.rowIndex}, '${row.label}')" class="px-3 py-1.5 bg-gradient-to-r from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 text-white rounded-lg text-xs font-semibold shadow hover:shadow-md transition-all">💾 บันทึก</button></td></tr>`; });
+        html += `</tbody></table></div>`; container.innerHTML = html;
+      });
+    }
+    function saveThresholdRow(type, param, rowIndex, label) {
+      const warnEl = document.querySelector(`input[data-row="${rowIndex}"][data-field="warn"]`); const alarmEl = document.querySelector(`input[data-row="${rowIndex}"][data-field="alarm"]`); const critEl = document.querySelector(`input[data-row="${rowIndex}"][data-field="crit"]`);
+      const data = { warnMax: warnEl.value.trim(), alarmMax: alarmEl.value.trim(), critMax: critEl.value.trim() }; const w = parseFloat(data.warnMax); const a = parseFloat(data.alarmMax); const c = parseFloat(data.critMax);
+      if (!isNaN(w) && !isNaN(a) && w >= a) { showModal({ icon: "⚠️", title: "ค่าไม่ถูกต้อง", body: "<p>Warning ต้องน้อยกว่า Alarm</p>", actions: [{ text: "ตกลง", cls: "bg-amber-500 text-white modal-btn", onClick: closeModal }] }); return; }
+      if (!isNaN(a) && !isNaN(c) && a >= c) { showModal({ icon: "⚠️", title: "ค่าไม่ถูกต้อง", body: "<p>Alarm ต้องน้อยกว่า Critical</p>", actions: [{ text: "ตกลง", cls: "bg-amber-500 text-white modal-btn", onClick: closeModal }] }); return; }
+      showModal({ icon: "💾", title: "ยืนยันการบันทึก?", body: `<p>บันทึกค่าใหม่สำหรับ <b>${label}</b></p><div class="text-xs mt-2 p-2 bg-slate-50 rounded"><div>🟡 Warning: <b>${data.warnMax || '—'}</b></div><div>🟠 Alarm: <b>${data.alarmMax || '—'}</b></div><div>🔴 Critical: <b>${data.critMax || '—'}</b></div></div>`, actions: [{ text: "ยกเลิก", cls: "bg-slate-200 text-slate-700 modal-btn", onClick: closeModal }, { text: "บันทึก", cls: "bg-blue-600 text-white modal-btn", onClick: () => { closeModal(); doSaveThreshold(type, param, data); } }] });
+    }
+    function doSaveThreshold(type, param, data) {
+      const pin = document.getElementById('settings-pin').value.trim();
+      fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'updateThresholdByParam', type: type, param: param, data: data, pin: pin }) })
+        .then(r => r.json())
+        .then(res => {
+          if (res.success) { showModal({ icon: "✅", title: "บันทึกสำเร็จ", body: `<p>${res.message}</p>`, actions: [{ text: "ตกลง", cls: "bg-blue-600 text-white modal-btn", onClick: closeModal }] }); fetch(`${API_URL}?action=getThresholdsForClient&type=${currentTab}`).then(r => r.json()).then(th => { currentThresholds = th || {}; }); }
+          else { showModal({ icon: "❌", title: "เกิดข้อผิดพลาด", body: `<p>${res.message}</p>`, actions: [{ text: "ตกลง", cls: "bg-red-600 text-white modal-btn", onClick: closeModal }] }); }
+        })
+        .catch(err => { showModal({ icon: "❌", title: "เกิดข้อผิดพลาด", body: `<p>${err.message}</p>`, actions: [{ text: "ตกลง", cls: "bg-red-600 text-white modal-btn", onClick: closeModal }] }); });
+    }
   </script>
 </body>
 </html>
