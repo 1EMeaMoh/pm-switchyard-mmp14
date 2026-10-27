@@ -1,0 +1,22 @@
+{
+  "name": "PM_TR_MMP14 - Staff Portal",
+  "short_name": "PM Portal",
+  "description": "ระบบบันทึกข้อมูล PM Switchyard",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f0f4f8",
+  "theme_color": "#1e40af",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-512.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "icon-512.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
