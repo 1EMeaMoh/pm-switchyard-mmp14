@@ -9,6 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="PM Portal">
   <link rel="apple-touch-icon" href="icon-512.jpg">
   <link rel="icon" href="icon-512.jpg" type="image/jpeg">
+  <link rel="manifest" href="manifest.json">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -1034,6 +1035,14 @@
           else { showModal({ icon: "❌", title: "เกิดข้อผิดพลาด", body: `<p>${res.message}</p>`, actions: [{ text: "ตกลง", cls: "bg-red-600 text-white modal-btn", onClick: closeModal }] }); }
         })
         .catch(err => { showModal({ icon: "❌", title: "เกิดข้อผิดพลาด", body: `<p>${err.message}</p>`, actions: [{ text: "ตกลง", cls: "bg-red-600 text-white modal-btn", onClick: closeModal }] }); });
+    }
+  </script>
+    <!-- ★ Register Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW Error:', err));
+      });
     }
   </script>
 </body>
